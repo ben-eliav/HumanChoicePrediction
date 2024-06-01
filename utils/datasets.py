@@ -18,6 +18,7 @@ from tqdm import trange
 import pandas as pd
 from consts import *
 from utils import personas
+from sklearn.decomposition import PCA
 
 
 class OfflineDataSet(Dataset):
@@ -27,10 +28,12 @@ class OfflineDataSet(Dataset):
         x_path = DATA_CLEAN_ACTION_PATH_X
         y_path = DATA_CLEAN_ACTION_PATH_Y
         self.actions_df = None
+        self.first_user = 0
         if "X" in user_groups:  # Offline Human - training groups (E_A)
             self.actions_df = pd.read_csv(x_path)
             assert self.actions_df.user_id.max() + 1 == DATA_CLEAN_ACTION_PATH_X_NUMBER_OF_USERS
-        if "Y" in user_groups: # Offline Human - testing groups (E_B)
+        if "Y" in user_groups:  # Offline Human - testing groups (E_B)
+            self.first_user = DATA_CLEAN_ACTION_PATH_X_NUMBER_OF_USERS
             Y_dataset = pd.read_csv(y_path)
             assert Y_dataset.user_id.max() + 1 == DATA_CLEAN_ACTION_PATH_Y_NUMBER_OF_USERS
             Y_dataset.user_id += DATA_CLEAN_ACTION_PATH_X_NUMBER_OF_USERS
@@ -54,11 +57,12 @@ class OfflineDataSet(Dataset):
 
         if users is not None:
             self.actions_df = self.actions_df[self.actions_df["user_id"].isin(users.tolist())]
-            assert self.actions_df["user_id"].nunique() == len(users.tolist()), "some of the users that chosen to used"\
+            assert self.actions_df["user_id"].nunique() == len(users.tolist()), "some of the users that chosen to used" \
                                                                                 "are not exists in the dataset!"
 
         if "persona" in self.actions_df.columns:
-            print("user per persona:", self.actions_df[["persona", "user_id"]].drop_duplicates().groupby("persona").count())
+            print("user per persona:",
+                  self.actions_df[["persona", "user_id"]].drop_duplicates().groupby("persona").count())
 
         grouped_counts = self.actions_df.groupby(["user_id", "strategy_id"]).size().reset_index(name="N")  # For
         # every pair of DM and bot, how many rounds the DM played against the bot.
@@ -76,20 +80,38 @@ class OfflineDataSet(Dataset):
 
         self.actions_df = self.actions_df.drop("N", axis=1)
 
-        self.actions_df = self.actions_df.groupby(["user_id", "gameId"])
+        if self.config["save_previous_games"]:
+            self.actions_df = self.actions_df.groupby(["user_id"])
+            self.max_user_rounds = self.actions_df["user_id"].value_counts().max()
+        else:
+            self.actions_df = self.actions_df.groupby(["user_id", "gameId"])
 
         self.idx_to_group = list(self.actions_df.indices.keys())  # all pairs of user id and game ids in the csv
         self.group_to_idx = {g: i for i, g in enumerate(self.idx_to_group)}  # pair of user and game => index in
         # idx_to_group
-        self.n_groups_by_user_id = defaultdict(list)  # user => ids of games that user played
-        for u, i in sorted(self.actions_df.indices.keys()):
-            self.n_groups_by_user_id[u].append(i)
-
-        # Loads data from the csv and converts it to a dictionary of id: numerical vector of the features of the review
-        self.review_reduced = pd.read_csv(config['FEATURES_PATH'], index_col=0).T.astype(int).to_dict(orient='list')
-        # Converts the vector to a tensor
-        self.review_reduced = {int(rid): torch.Tensor(vec) for rid, vec in self.review_reduced.items()}
-        self.review_reduced[-1] = torch.zeros(config["REVIEW_DIM"])
+        if self.config["save_previous_games"]:
+            pass
+        else:
+            self.n_groups_by_user_id = defaultdict(list)  # user => ids of games that user played
+            for u, i in sorted(self.actions_df.indices.keys()):
+                self.n_groups_by_user_id[u].append(i)
+        if self.config["combine_features"]:
+            reviews_data = defaultdict(list)
+            for feature_name in self.config["feature_combination"]:
+                review = pd.read_csv(config['FEATURES_PATH'][feature_name], index_col=0).T.astype(float).to_dict(
+                    orient='list')
+                for rid, vec in review.items():
+                    reviews_data[rid] += vec
+            X = np.array(list(reviews_data.values()))
+            X = PCA(n_components=self.config["pca_dim"]).fit_transform(X)
+            self.review_reduced = {int(rid): torch.Tensor(vec) for rid, vec in zip(reviews_data.keys(), X)}
+            self.review_reduced[-1] = torch.zeros(config["pca_dim"])
+        else:  # ORIGINAL CODE
+            # Loads data from the csv and converts it to a dictionary of id: numerical vector of the features of the review
+            self.review_reduced = pd.read_csv(config['FEATURES_PATH'], index_col=0).T.astype(int).to_dict(orient='list')
+            # Converts the vector to a tensor
+            self.review_reduced = {int(rid): torch.Tensor(vec) for rid, vec in self.review_reduced.items()}
+            self.review_reduced[-1] = torch.zeros(config["REVIEW_DIM"])
 
         # Creates a dictionary of all reviews including the positive part, negative part and final score. The keys
         # are the unique IDs of each review. Unclear why we need this...
@@ -108,19 +130,34 @@ class OfflineDataSet(Dataset):
         return len(self.idx_to_group)
 
     def __getitem__(self, item):
-        if isinstance(item, int):
-            group = self.idx_to_group[item]  # group is a tuple of user id and game id. Important, we may want to
-            # change the data to be just the user id without the game id.
-        else:
-            group = item  # group is a tuple of user id and game id
-        game = self.actions_df.get_group(group).reset_index()  # get all rounds of the given game
-        user_id = game["user_id"][0]  # same as group[0]
-        n_rounds = len(game)
+        if self.config["save_previous_games"]:  # OUR IMPROVEMENT
+            group = item + self.first_user
+            user_games = self.actions_df.get_group(group).reset_index()
+            user_id = group
+            n_rounds = len(user_games)
+            user_games["is_sample"] = np.ones(n_rounds).astype(bool)
+            if n_rounds < self.max_user_rounds:
+                user_games = pd.concat([user_games] + [DATA_BLANK_ROW_DF(-1)] * (self.max_user_rounds - n_rounds),
+                                       ignore_index=True)  # Padding to be max_user_rounds rounds
 
-        game["is_sample"] = np.ones(n_rounds).astype(bool)  # vector of size n_rounds of True
-        if n_rounds < DATA_ROUNDS_PER_GAME:  # The game ended before it was supposed to
-            game = pd.concat([game] + [DATA_BLANK_ROW_DF(game["strategy_id"][0])] * (DATA_ROUNDS_PER_GAME - n_rounds),
-                             ignore_index=True)  # Padding to be 10 rounds
+            game = user_games  # change the name to game for consistency with the other case
+        else:  # ORIGINAL CODE
+            if isinstance(item, int):
+                group = self.idx_to_group[item]  # group is a tuple of user id and game id. Important, we may want to
+                # change the data to be just the user id without the game id.
+            else:
+                group = item  # group is a tuple of user id and game id
+            game = self.actions_df.get_group(group).reset_index()  # get all rounds of the given game
+            user_id = game["user_id"][0]  # same as group[0]
+            n_rounds = len(game)
+
+            game["is_sample"] = np.ones(n_rounds).astype(bool)  # vector of size n_rounds of True
+            if n_rounds < DATA_ROUNDS_PER_GAME:  # The game ended before it was supposed to
+                game = pd.concat(
+                    [game] + [DATA_BLANK_ROW_DF(game["strategy_id"][0])] * (DATA_ROUNDS_PER_GAME - n_rounds),
+                    ignore_index=True)  # Padding to be 10 rounds
+
+            self.max_user_rounds = DATA_ROUNDS_PER_GAME
 
         # All the features of the situation as in page 18 of the paper:
 
@@ -129,8 +166,8 @@ class OfflineDataSet(Dataset):
 
         hotels_scores = game["hotelScore"].to_numpy()  # vector of size n_rounds of the hotel score for each round
 
-
-        action_taken = game["didGo"].to_numpy().astype(np.int64)  # vector of size n_rounds of the action taken by the DM
+        action_taken = game["didGo"].to_numpy().astype(
+            np.int64)  # vector of size n_rounds of the action taken by the DM
         is_hotel_good = (game["didGo"] == game["didWin"]).to_numpy()  # vector of size n_rounds of whether the hotel
         # score > 0.8
 
@@ -143,7 +180,8 @@ class OfflineDataSet(Dataset):
         user_not_earned_more = user_points < bot_points
 
         reviewId = game["reviewId"]
-        round_num = np.full(10, -1)
+
+        round_num = np.full(self.max_user_rounds, -1)
         round_num[:n_rounds] = np.arange(n_rounds)  # round_num = [1, 2, ..., n_rounds, -1, -1, ...]
 
         sample = {"user_id": user_id, "bot_strategy": bot_strategy, "n_rounds": n_rounds, "roundNum": round_num,
@@ -168,7 +206,9 @@ class OfflineDataSet(Dataset):
         for column_name, (lower, upper) in zip(reaction_time_columns_names, reaction_time_bins):
             sample[column_name] = (lower <= last_reaction_time) & (last_reaction_time < upper)
 
-        sample["review_vector"] = torch.stack(sample["review_vector"])  # Matrix of 10 x REVIEW_DIM
+        sample["review_vector"] = torch.stack(sample["review_vector"])  # Matrix of max_user_rounds x REVIEW_DIM
+        # max_user_rounds is 10 if we look at a single game
+
         return sample
 
 
@@ -186,7 +226,7 @@ class OnlineSimulationDataSet(Dataset):
         weight_type = self.config["loss_weight_type"]
         self.bots_per_user = config["bots_per_user"]
 
-        self.n_users = int(n_users / self.bots_per_user * 6)
+        self.n_users = int(n_users / self.bots_per_user * 6)  # bots per user = 6 thus n_users = online simulation size
         max_active = int(max_active / self.bots_per_user * 6)
 
         self.SIMULATION_TH = simulation_th
@@ -206,16 +246,36 @@ class OnlineSimulationDataSet(Dataset):
         for hotel in range(1, N_HOTELS + 1):
             hotel_path = f"{DATA_GAME_REVIEWS_PATH}/{hotel}.csv"
             hotel_csv = pd.read_csv(hotel_path, header=None)
-            self.hotels.append(hotel_csv.iloc[:, 4].to_numpy())
-            self.reviews_id.append(hotel_csv.iloc[:, 0].to_numpy())
+            self.hotels.append(hotel_csv.iloc[:, 4].to_numpy())  # rankings of the hotel
+            self.reviews_id.append(hotel_csv.iloc[:, 0].to_numpy())  # ids of the reviews for each hotel
         self.hotels = np.array(self.hotels)
         self.reviews_id = np.array(self.reviews_id)
 
-        self.review_reduced = pd.read_csv(config['FEATURES_PATH'], index_col=0).T.astype(int).to_dict(orient='list')
-        self.review_reduced = {int(rid): torch.Tensor(vec) for rid, vec in self.review_reduced.items()}
-        self.review_reduced[-1] = torch.zeros(config["REVIEW_DIM"])
+        # self.review_reduced = pd.read_csv(config['FEATURES_PATH'], index_col=0).T.astype(int).to_dict(orient='list')
+        # self.review_reduced = {int(rid): torch.Tensor(vec) for rid, vec in self.review_reduced.items()}
+        # self.review_reduced[-1] = torch.zeros(config["REVIEW_DIM"])
 
-        self.gcf = pd.read_csv(config['SIMULATION_EFs_PATH'], index_col=0, dtype=float).T
+        if self.config["combine_features"]:  # Our improvement
+            reviews_data = defaultdict(list)
+            for feature_name in self.config["feature_combination"]:
+                review = pd.read_csv(config['FEATURES_PATH'][feature_name], index_col=0).T.astype(float).to_dict(
+                    orient='list')
+                for rid, vec in review.items():
+                    reviews_data[rid] += vec
+            X = np.array(list(reviews_data.values()))
+            X = PCA(n_components=self.config["pca_dim"]).fit_transform(X)
+            self.review_reduced = {int(rid): torch.Tensor(vec) for rid, vec in zip(reviews_data.keys(), X)}
+            self.review_reduced[-1] = torch.zeros(config["pca_dim"])
+        else:  # ORIGINAL CODE
+            # Loads data from the csv and converts it to a dictionary of id: numerical vector of the features of the review
+            self.review_reduced = pd.read_csv(config['FEATURES_PATH'], index_col=0).T.astype(int).to_dict(orient='list')
+            # Converts the vector to a tensor
+            self.review_reduced = {int(rid): torch.Tensor(vec) for rid, vec in self.review_reduced.items()}
+            self.review_reduced[-1] = torch.zeros(config["REVIEW_DIM"])
+
+        self.gcf = pd.read_csv(config['SIMULATION_EFs_PATH'], index_col=0, dtype=float).T  # For each review,
+        # feature vector of review
+
         self.gcf.columns = self.gcf.columns.astype(int)
 
         self.basic_nature = utils.basic_nature_options.pers[basic_nature]
@@ -224,20 +284,33 @@ class OnlineSimulationDataSet(Dataset):
         self.n_go = 0
         self.n_dont_go = 0
 
+        if self.config["save_previous_games"]:
+            self.max_user_rounds = 0
+        else:
+            self.max_user_rounds = DATA_ROUNDS_PER_GAME
+
         pbar = trange(self.max_active)
         for i in pbar:
-            self.new_user()
+            num_rounds = self.new_user()
+            if self.config["save_previous_games"] and num_rounds > self.max_user_rounds:
+                self.max_user_rounds = num_rounds
             pbar.set_description(f"Create online-simulation users for this epoch. "
                                  f"mean games/user: {(self.total_games_created / self.next_user):.2f}")
 
+        # User ID starts from 245 (210 + 35)
         self.add_to_user_id = DATA_CLEAN_ACTION_PATH_X_NUMBER_OF_USERS + DATA_CLEAN_ACTION_PATH_Y_NUMBER_OF_USERS
+
+
+
 
     class SimulatedUser:
         def __init__(self, user_improve, basic_nature, favorite_topic_method, **args):
             history_window = np.random.negative_binomial(2, 1 / 2) + np.random.randint(0, 2)
             quality_threshold = np.random.normal(8, 0.5)
             good_topics = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 13, 19, 28, 42]
+            good_topics = [str(t) for t in good_topics]
             bad_topics = [11, 20, 21, 22, 23, 24, 25, 26, 27, 36, 40]
+            bad_topics = [str(t) for t in bad_topics]
             if favorite_topic_method == "random":
                 positive_topics = np.random.choice(good_topics, 3)
                 negative_topics = np.random.choice(bad_topics, 3)
@@ -257,7 +330,8 @@ class OnlineSimulationDataSet(Dataset):
                             3: ("topic based", basic_nature[2], user_strategies.topic_based(positive_topics,
                                                                                             negative_topics,
                                                                                             quality_threshold)),
-                            4: ("LLM stochastic (Language-based)",  basic_nature[3], user_strategies.LLM_based(is_stochastic=True)),
+                            4: ("LLM stochastic (Language-based)", basic_nature[3],
+                                user_strategies.LLM_based(is_stochastic=True)),
                             5: ("LLM deterministic", basic_nature[4], user_strategies.LLM_based(is_stochastic=False)),
                             }
             self.nature = np.random.rand(len(self.ACTIONS)) * np.array([v[1] for v in self.ACTIONS.values()])
@@ -269,13 +343,17 @@ class OnlineSimulationDataSet(Dataset):
             self.user_proba = self.nature.copy()
 
         def update_proba(self):
-            reduce_feelings = np.random.rand(len(self.ACTIONS) - 1) * self.user_improve * 10/9 - (self.user_improve / 10)
+            reduce_feelings = np.random.rand(len(self.ACTIONS) - 1) * self.user_improve * 10 / 9 - (
+                        self.user_improve / 10)
             total_reduced = self.user_proba[1:] * reduce_feelings
             self.user_proba[1:] -= total_reduced
             self.user_proba[1:] = np.maximum(0, self.user_proba[1:])
             self.user_proba[0] = 1 - self.user_proba[1:].sum()
 
     def play_round(self, bot_message, user, previous_rounds, hotel, review_id):
+        """
+        Given information about the current state, the user makes a decision
+        """
         user_strategy = self.sample_from_probability_vector(user.user_proba)
         user_strategy_function = user.ACTIONS[user_strategy][2]
         review_features = self.gcf[review_id]
@@ -305,6 +383,9 @@ class OnlineSimulationDataSet(Dataset):
                 return i
 
     def get_hotel(self, hotel_id=None):
+        """
+        Given hotel id return the vector of size 7 of its scores
+        """
         if hotel_id is None:
             hotel_id = np.random.randint(N_HOTELS) + 1
         hotel = self.hotels[hotel_id]
@@ -341,15 +422,15 @@ class OnlineSimulationDataSet(Dataset):
                 options = [3, 0, 2, 5, 19, 59] + [132, 23, 107, 43, 17, 93]
                 return random.sample(options, self.bots_per_user)
 
-
     def new_user(self):
         user_id = self.next_user
         assert user_id < self.n_users
         args = {"favorite_review": self.get_review()}
         user = self.SimulatedUser(user_improve=self.user_improve, basic_nature=self.basic_nature,
                                   favorite_topic_method="review", **args)
-        bots = self.sample_bots()
+        bots = self.sample_bots()  # samples 6 bots that the user will play against
         game_id = 0
+        rounds_played = 0
         for bot in bots:
             user.return_to_init_proba()
             bot_strategy = getattr(bot_strategies, f"strategy_{bot}")
@@ -368,6 +449,7 @@ class OnlineSimulationDataSet(Dataset):
                 last_reaction_time = -1
                 weight = 1
                 for round_number in range(1, DATA_ROUNDS_PER_GAME + 1):  # start a new round
+                    rounds_played += 1
                     hotel_id, hotel = self.get_hotel()  # get a hotel
 
                     bot_message = self.bot_plays(bot_strategy, hotel, previous_rounds)  # expert plays
@@ -417,19 +499,23 @@ class OnlineSimulationDataSet(Dataset):
 
                     last_last_didGo, last_last_didWin = last_didGo, last_didWin
                     last_didGo, last_didWin = int(user_action), int(round_result)
-                    game.append(row)
-                self.add_game(user_id, game)
+                    game.append(row)  # game is a list of dictionaries (rounds)
+                self.add_game(user_id, game)  # save the game dataframe in self.users[CURRENT USER ID]
                 game_id += 1
         self.next_user += 1
         self.n_games_per_user[user_id] = game_id
         self.total_games_created += game_id
         self.active_users.append(user_id)
+        return rounds_played
 
     def __len__(self):
+        if self.config["save_previous_games"]:
+            return self.n_users / SIMULATION_BATCH_SIZE
+
         if self.next_user <= 50:
             return self.n_users * 42
         else:
-            return int(self.n_users * self.total_games_created / self.next_user)
+            return int(self.n_users * self.total_games_created / self.next_user)  # Total games created
 
     def get_game(self, user_id):
         game = self.users[user_id].pop(0)
@@ -439,15 +525,36 @@ class OnlineSimulationDataSet(Dataset):
                 self.new_user()
         return game
 
+    def get_user(self, user_id):
+        """
+        For user with user id, get dataframe of all rounds played, regardless of the game.
+        """
+        user = self.users[user_id]
+        self.active_users.remove(user_id)
+        if self.next_user < self.n_users:
+            self.new_user()
+        return pd.concat(user, ignore_index=True)
+
     def __getitem__(self, user_id):
-        game = self.get_game(user_id)
+        if self.config["save_previous_games"]:
+            user_info = self.get_user(user_id)
+            user_id = user_info["user_id"][0] + self.add_to_user_id
+            n_rounds = len(user_info)
 
-        user_id = game["user_id"][0] + self.add_to_user_id
-        n_rounds = len(game)
+            if n_rounds < self.max_user_rounds:
+                user_info = pd.concat([user_info] + [DATA_BLANK_ROW_DF(user_info["strategy_id"][0])] * (self.max_user_rounds - n_rounds),
+                                      ignore_index=True)
 
-        if n_rounds < DATA_ROUNDS_PER_GAME:
-            game = pd.concat([game] + [DATA_BLANK_ROW_DF(game["strategy_id"][0])] * (DATA_ROUNDS_PER_GAME - n_rounds),
-                             ignore_index=True)
+            game = user_info  # change the name to game for consistency with the other case
+        else:  # ORIGINAL CODE
+            game = self.get_game(user_id)
+
+            user_id = game["user_id"][0] + self.add_to_user_id
+            n_rounds = len(game)
+
+            if n_rounds < DATA_ROUNDS_PER_GAME:
+                game = pd.concat([game] + [DATA_BLANK_ROW_DF(game["strategy_id"][0])] * (DATA_ROUNDS_PER_GAME - n_rounds),
+                                 ignore_index=True)
 
         bot_strategy = game["strategy_id"].to_numpy()
         hotels_scores = game["hotelScore"].to_numpy()
@@ -469,7 +576,7 @@ class OnlineSimulationDataSet(Dataset):
 
         reviewId = game["reviewId"]
 
-        round_num = np.full(10, -1)
+        round_num = np.full(self.max_user_rounds, -1)
         round_num[:n_rounds] = np.arange(n_rounds)
         action_ids = -np.ones_like(user_points)
 

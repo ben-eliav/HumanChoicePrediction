@@ -163,7 +163,6 @@ class ResultSaver:
         self.bot_strategy = []
         self.accuracy = []
         self.directory = Path('predictions', config["wandb_run_id"])
-
         self.directory.mkdir(parents=True, exist_ok=True)
 
     def add_results(self, ids, user_id, bot_strategy, accuracy):
@@ -174,7 +173,7 @@ class ResultSaver:
 
     def next_epoch(self):
         data = pd.DataFrame({
-            'ID': torch.cat(self.ids).numpy().astype(int),
+            'ID': torch.cat(self.ids).numpy().astype(int),  # Action ID
             'User_ID': torch.cat(self.user_id).numpy().astype(int),
             'Bot_Strategy': torch.cat(self.bot_strategy).numpy().astype(int),
             'Accuracy': torch.cat(self.accuracy).numpy()
@@ -187,7 +186,6 @@ class ResultSaver:
             artifact.add_file(path)
             wandb.log_artifact(artifact)
         return data
-
 
 
 class GumbelSigmoid(torch.nn.Module):
