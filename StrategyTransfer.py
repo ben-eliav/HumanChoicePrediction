@@ -75,8 +75,8 @@ parser.add_argument('--combine_features', type=str2bool, default=False, help='Co
 parser.add_argument('--feature_combination', type=lambda x: x.split('_'), default='EFs_GPT4', help='Feature combination')
 parser.add_argument('--pca_dim', type=int, default=36, help='PCA dimension')
 
-parser.add_argument('--final_change', type=str, default="none", options=["none", "1", "2"],
-                    help=("Final change of project. 1: Combine features, 2: Save previous games"))
+parser.add_argument('--final_change', type=str, default="none",
+                    help=("Final change of project. 1: Combine features, 2: Save previous games, none: nothing."))
 
 
 args = parser.parse_args()
@@ -85,6 +85,7 @@ main_run = wandb.init(project='Strategy_Transfer_TACL')
 config = wandb.config
 
 config.update(args.__dict__)
+
 
 if args["final_change"] == "1":  # Set hyperparameters for change 1: Combine EFs and GPT4
     config["combine_features"] = True
@@ -95,6 +96,9 @@ elif args["final_change"] == "2":  # Set hyperparameters for change 2: Save prev
     # transformer.
     config["save_previous_games"] = True
     config["architecture"] = "transformer"
+
+elif args["final_change"] != "none":
+    raise ValueError("Only 2 changes. Please choose 'none', '1', or '2'.")
 
 
 meta_features_map = {"features": {"EFs": {"FEATURES_PATH": config["SIMULATION_EFs_PATH"], "REVIEW_DIM": 37},
