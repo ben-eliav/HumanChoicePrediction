@@ -87,17 +87,17 @@ config = wandb.config
 config.update(args.__dict__)
 
 
-if args["final_change"] == "1":  # Set hyperparameters for change 1: Combine EFs and GPT4
+if config["final_change"] == "1":  # Set hyperparameters for change 1: Combine EFs and GPT4
     config["combine_features"] = True
     config["feature_combination"] = ["EFs", "GPT4"]
     config["pca_dim"] = 36
 
-elif args["final_change"] == "2":  # Set hyperparameters for change 2: Save previous games and make architecture
+elif config["final_change"] == "2":  # Set hyperparameters for change 2: Save previous games and make architecture
     # transformer.
     config["save_previous_games"] = True
     config["architecture"] = "transformer"
 
-elif args["final_change"] != "none":
+elif config["final_change"] != "none":
     raise ValueError("Only 2 changes. Please choose 'none', '1', or '2'.")
 
 
