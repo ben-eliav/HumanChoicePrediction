@@ -84,21 +84,25 @@ args = parser.parse_args()
 main_run = wandb.init(project='Strategy_Transfer_TACL')
 config = wandb.config
 
-config.update(args.__dict__)
+args = vars(args)
 
+if args["final_change"] == "1":  # Set hyperparameters for change 1: Combine EFs and GPT4
+    args["combine_features"] = True
+    args["feature_combination"] = ["EFs", "GPT4"]
+    args["pca_dim"] = 36
 
-if config["final_change"] == "1":  # Set hyperparameters for change 1: Combine EFs and GPT4
-    config["combine_features"] = True
-    config["feature_combination"] = ["EFs", "GPT4"]
-    config["pca_dim"] = 36
-
-elif config["final_change"] == "2":  # Set hyperparameters for change 2: Save previous games and make architecture
+elif args["final_change"] == "2":  # Set hyperparameters for change 2: Save previous games and make architecture
     # transformer.
-    config["save_previous_games"] = True
-    config["architecture"] = "transformer"
+    args["save_previous_games"] = True
+    args["architecture"] = "transformer"
 
-elif config["final_change"] != "none":
+elif args["final_change"] != "none":
     raise ValueError("Only 2 changes. Please choose 'none', '1', or '2'.")
+
+config.update(args)
+
+
+
 
 
 meta_features_map = {"features": {"EFs": {"FEATURES_PATH": config["SIMULATION_EFs_PATH"], "REVIEW_DIM": 37},
