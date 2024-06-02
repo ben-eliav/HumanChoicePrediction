@@ -90,6 +90,7 @@ if args["final_change"] == "1":  # Set hyperparameters for change 1: Combine EFs
     args["combine_features"] = True
     args["feature_combination"] = ["EFs", "GPT4"]
     args["pca_dim"] = 36
+    args["ENV_LEARNING_RATE"] = 1e-4
 
 elif args["final_change"] == "2":  # Set hyperparameters for change 2: Save previous games and make architecture
     # transformer.
