@@ -118,7 +118,7 @@ def predict_go_proba(env_model, strategic_situation: StrategicSituation, review_
     if not isinstance(review_vector, torch.Tensor):
         review_vector = torch.Tensor(review_vector)
 
-    vec = torch.cat([torch.Tensor(strategic_situation()), review_vector.flatten()])  # TODO: We may want to change here
+    vec = torch.cat([torch.Tensor(strategic_situation()), review_vector.flatten()])
     if vectors:
         output = env_model.predict_proba({"x": vec,
                                           "user_vector": vectors["user_vector"],
