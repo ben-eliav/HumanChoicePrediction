@@ -13,6 +13,7 @@ class transformer_env_ARC(nn.Module):  # ARC = architecture
         nhead = config["transformer_nheads"]
         hidden_dim = config["hidden_dim"]
         self.save_previous_games = config["save_previous_games"]
+        self.history_length = config["history_length"]  # How many rounds in the past I'm interested in (chose 10)
         self.user_vectors = None
 
         self.fc = nn.Sequential(nn.Linear(input_dim, hidden_dim),
@@ -34,9 +35,11 @@ class transformer_env_ARC(nn.Module):  # ARC = architecture
         max_rounds = x.shape[1]
         x = self.fc(x)
         output = []
-        if self.save_previous_games:
+        if self.save_previous_games:  # This is the essence of the difference in our model.
             for i in range(max_rounds):
-                time_output = self.main_task(x[:, max(i-10, 0):i+1].contiguous())[:, -1, :]
+                time_output = self.main_task(x[:, max(i-self.history_length, 0):i+1].contiguous())[:, -1, :]  # We use
+                # the last 10 rounds that the player played IN GENERAL, REGARDLESS OF WHICH GAME IT IS. This is only
+                # because the GPU could not handle more than 10 previous rounds.
                 output.append(time_output)
         else:
             for i in range(DATA_ROUNDS_PER_GAME):
