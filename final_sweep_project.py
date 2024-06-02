@@ -1,4 +1,5 @@
 import wandb
+
 YOUR_WANDB_USERNAME = "beneliav1"
 project = "Strategy_Transfer_TACL"
 
@@ -11,19 +12,15 @@ command = [
     ]
 
 sweep_config = {
-    "name": "Hyperparameter tuning for transformer model",
+    "name": "Final run for project, recreates the results shown in paper.",
     "method": "grid",
     "metric": {
         "goal": "maximize",
         "name": "ENV_test_accuracy_per_mean_user_and_bot"
     },
     "parameters": {
-        "ENV_HPT_mode": {"values": [False]},
-        "architecture": {"values": ["transformer"]},
-        "save_previous_games": {"values": [True]},
-        "seed": {"values": [1, 2, 3]},
-        "hidden_dim": {"values": [32, 16, 24]},
-        "ENV_LEARNING_RATE": {"values": [1e-3, 1e-4, 1e-5]},
+        "seed": {"values": list(range(5))},
+        "final_change": {"values": ["none", "1", "2"]},
     },
     "command": command
 }
