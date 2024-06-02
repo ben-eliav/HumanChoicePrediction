@@ -168,7 +168,8 @@ class Environment:
 
                     batch_size, _ = batch["hotels_scores"].shape
                     if self.config["save_previous_games"]:
-                        review_vector = batch["review_vector"]
+                        review_vector = batch["review_vector"]  # no need to reshape anything here due to changes to
+                        # datasets.py
                     else:
                         review_vector = batch["review_vector"].reshape(batch_size, DATA_ROUNDS_PER_GAME, -1)
                     env_input = [batch[feature].unsqueeze(-1) for feature in STRATEGIC_FEATURES_ORDER]
@@ -189,7 +190,8 @@ class Environment:
                     output = model_output["output"]
                     mask = (batch["action_taken"] != -100).flatten()
                     if self.config["save_previous_games"]:
-                        relevant_predictions = output.reshape(-1, 2)[mask]
+                        relevant_predictions = output.reshape(-1, 2)[mask]  # outputs are positive / negative
+                        # probabilities for each sample, there is no structure of games. we want to remove all padding
                     else:
                         relevant_predictions = output.reshape(batch_size * DATA_ROUNDS_PER_GAME, -1)[mask]
 
