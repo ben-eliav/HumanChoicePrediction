@@ -117,7 +117,7 @@ class NewUserBatchSampler(Sampler):
         return int(len(self.dataset) / self.batch_size)
 
 
-class OurUserBatchSampler(Sampler):
+class OurUserBatchSampler(Sampler):  # We didn't end up using this.
     def __init__(self, dataset, batch_size, shuffle=False, sampling_type="distribution"):
         super().__init__(dataset)
         self.dataset = dataset
