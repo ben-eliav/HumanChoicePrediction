@@ -70,6 +70,7 @@ parser.add_argument('--personas_group_number', type=int, default=-1, help='Perso
 #   2. We want to "get the best of both worlds" by combining different types of embeddings.
 
 parser.add_argument('--save_previous_games', type=str2bool, default=False, help='Save previous games flag')
+parser.add_argument('--history_length', type=int, default=10, help='When saving previous games, how many games to save')
 parser.add_argument('--combine_features', type=str2bool, default=False, help='Combine features flag')
 parser.add_argument('--feature_combination', type=lambda x: x.split('_'), default='EFs_GPT4', help='Feature combination')
 parser.add_argument('--pca_dim', type=int, default=36, help='PCA dimension')
