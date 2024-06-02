@@ -5,7 +5,6 @@ from utils.functions import *
 import wandb
 from utils import personas
 import argparse
-from utils.datasets import OfflineDataSet
 
 parser = argparse.ArgumentParser(description='Hyperparameter tuning with wandb.')
 def str2bool(v):
@@ -75,6 +74,9 @@ parser.add_argument('--combine_features', type=str2bool, default=False, help='Co
 parser.add_argument('--feature_combination', type=lambda x: x.split('_'), default='EFs_GPT4', help='Feature combination')
 parser.add_argument('--pca_dim', type=int, default=36, help='PCA dimension')
 
+
+# Simple parameter to control all other changes.
+
 parser.add_argument('--final_change', type=str, default="none",
                     help=("Final change of project. 1: Combine features, 2: Save previous games, none: nothing."))
 
@@ -102,18 +104,12 @@ elif args["final_change"] != "none":
 
 config.update(args)
 
-
-
-
-
 meta_features_map = {"features": {"EFs": {"FEATURES_PATH": config["SIMULATION_EFs_PATH"], "REVIEW_DIM": 37},
                                   "GPT4": {"FEATURES_PATH": "data/GPT4_PCA_36.csv", "REVIEW_DIM": 36},
                                   "BERT": {"FEATURES_PATH": "data/BERT_PCA_36.csv", "REVIEW_DIM": 36}},
                      "architecture": {"LSTM": {"use_user_vector": True},
                                       "transformer": {"use_user_vector": False}}
                      }
-
-# data = OfflineDataSet(user_groups="X", weight_type=config['loss_weight_type'], config=config)
 
 for meta_feature, meta_feature_map in meta_features_map.items():
     if meta_feature == "features" and config['combine_features']:  # OUR IMPROVEMENT
@@ -152,7 +148,6 @@ set_global_seed(config["seed"])
 
 all_user_points = []
 all_bot_points = []
-# hotels = utils.Hotels(config)  # do we use this?
 
 env_name = config["wandb_run_id"]
 
