@@ -132,15 +132,16 @@ class OfflineDataSet(Dataset):
     def __getitem__(self, item):
         if self.config["save_previous_games"]:  # OUR IMPROVEMENT
             group = item + self.first_user
-            user_games = self.actions_df.get_group(group).reset_index()
+            user_games = self.actions_df.get_group(group).reset_index()  # in this case, the "group" is a player index
             user_id = group
-            n_rounds = len(user_games)
+            n_rounds = len(user_games)  # number of rounds the player played in all games put together
             user_games["is_sample"] = np.ones(n_rounds).astype(bool)
             if n_rounds < self.max_user_rounds:
                 user_games = pd.concat([user_games] + [DATA_BLANK_ROW_DF(-1)] * (self.max_user_rounds - n_rounds),
                                        ignore_index=True)  # Padding to be max_user_rounds rounds
 
-            game = user_games  # change the name to game for consistency with the other case
+            game = user_games  # change the name to game for consistency with the other case. notice it IS NOT
+            # ACTUALLY A SINGLE GAME.
         else:  # ORIGINAL CODE
             if isinstance(item, int):
                 group = self.idx_to_group[item]  # group is a tuple of user id and game id. Important, we may want to
@@ -166,8 +167,7 @@ class OfflineDataSet(Dataset):
 
         hotels_scores = game["hotelScore"].to_numpy()  # vector of size n_rounds of the hotel score for each round
 
-        action_taken = game["didGo"].to_numpy().astype(
-            np.int64)  # vector of size n_rounds of the action taken by the DM
+        action_taken = game["didGo"].to_numpy().astype(np.int64)  # vector of size n_rounds of the action taken by the DM
         is_hotel_good = (game["didGo"] == game["didWin"]).to_numpy()  # vector of size n_rounds of whether the hotel
         # score > 0.8
 
@@ -285,7 +285,7 @@ class OnlineSimulationDataSet(Dataset):
         self.n_dont_go = 0
 
         if self.config["save_previous_games"]:
-            self.max_user_rounds = 0
+            self.max_user_rounds = 0  # max number of rounds a user played, to add padding to other players.
         else:
             self.max_user_rounds = DATA_ROUNDS_PER_GAME
 
@@ -536,7 +536,7 @@ class OnlineSimulationDataSet(Dataset):
         return pd.concat(user, ignore_index=True)
 
     def __getitem__(self, user_id):
-        if self.config["save_previous_games"]:
+        if self.config["save_previous_games"]:  # The same as Offline Dataset
             user_info = self.get_user(user_id)
             user_id = user_info["user_id"][0] + self.add_to_user_id
             n_rounds = len(user_info)
