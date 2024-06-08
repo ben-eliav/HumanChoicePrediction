@@ -20,8 +20,7 @@ sweep_config = {
     },
     "parameters": {
         "seed": {"values": list(range(3))},
-        "architecture": {"values": ["transformer"]},
-        "total_epochs": {"values": [10]},
+        "architecture": {"values": ["transformer"]},    
     },
     "command": command
 }
