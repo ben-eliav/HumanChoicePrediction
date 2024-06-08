@@ -18,7 +18,7 @@ class wandb_results:
         if reset_api:
             self.reset_api()
 
-        print(f"Download {sweep_id=} data...")
+        # print(f"Download {sweep_id=} data...")
         runs = self.api.sweep(f"{self.wandb_username}/{self.project_id}/{sweep_id}").runs
         n_runs = len(runs)
         path = f"sweeps_csvs/{sweep_id}_{n_runs}.csv"
@@ -47,7 +47,7 @@ class wandb_results:
         return runs_df
     
     def get_sweeps_results(self, sweeps, metric="accuracy_all", best_epoch=False, get_servers=False,  read_csv_if_exist=True, save_to_csv=True):
-        print("Total number of sweeps:", len(sweeps))
+        # print("Total number of sweeps:", len(sweeps))
         j = pd.concat([self.get_sweep_results(sweep, metric=metric, best_epoch=best_epoch,  get_servers=get_servers, save_to_csv=save_to_csv, read_csv_if_exist=read_csv_if_exist) for sweep in sweeps])
         j = j.reset_index(drop=True)
         return j
