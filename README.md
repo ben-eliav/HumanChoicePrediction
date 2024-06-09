@@ -1,8 +1,6 @@
 # Human Choice Prediction in Language-based Persuasion Games: Simulation-based Off-Policy Evaluation
 
-
 ## Getting Started
-
 
 ### Prerequisites
 
@@ -18,7 +16,7 @@ To install and run the code on your local machine, follow these steps:
 
    First, clone the repository to your local machine using Git. Open a terminal and run the following command:
    ```bash
-   git clone https://github.com/eilamshapira/HumanChoicePrediction
+   git clone https://github.com/ben-eliav/HumanChoicePrediction.git
     ```
 2. **Create and activate the conda environment**
 
@@ -40,15 +38,12 @@ To install and run the code on your local machine, follow these steps:
     wandb login
     ```
 
-## Citation
+## Running Sweeps
+In case the bash file doesn't work due to wandb user status, you can manually run the three sweeps to achieve the same results as shown in our paper:
 
-If you find this work useful, please cite our paper:
+```bash
+   python final_sweep_ben-eliav.py
 
-    @misc{shapira2024human,
-          title={Human Choice Prediction in Language-based Persuasion Games: Simulation-based Off-Policy Evaluation}, 
-          author={Eilam Shapira and Reut Apel and Moshe Tennenholtz and Roi Reichart},
-          year={2024},
-          eprint={2305.10361},
-          archivePrefix={arXiv},
-          primaryClass={cs.LG}
-    }
+   python original_transformer_sweep.py
+   python test_combinations_sweep.py
+```
